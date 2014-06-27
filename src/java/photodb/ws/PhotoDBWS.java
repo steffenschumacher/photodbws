@@ -54,14 +54,9 @@ public class PhotoDBWS extends photodb.processing.PhotoController implements Ser
      * @return 
      */
     @WebMethod(operationName = "exists")
+    @Override
     public boolean exists(@WebParam(name = "filephoto") FilePhoto filephoto) {
-        try {
-            db.insert(filephoto);
-            db.delete(filephoto);
-            return false;
-        } catch (ExistingPhotoException e) {
-            return true;
-        }
+        return super.exists(filephoto);
     }
     
     /**
@@ -101,8 +96,8 @@ public class PhotoDBWS extends photodb.processing.PhotoController implements Ser
 
     @Override
     public void contextDestroyed(ServletContextEvent sce) {
-        if(db != null) {
-            db.close();
+        if(s_db != null) {
+            s_db.close();
         }
     }
     
