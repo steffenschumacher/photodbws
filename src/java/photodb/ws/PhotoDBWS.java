@@ -20,6 +20,7 @@
 
 package photodb.ws;
 
+import java.io.IOException;
 import java.sql.SQLException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -30,6 +31,7 @@ import javax.servlet.ServletContextEvent;
 import javax.servlet.ServletContextListener;
 import photodb.db.Database;
 import photodb.db.ExistingPhotoException;
+import photodb.io.ByteChannel;
 import photodb.photo.FilePhoto;
 
 /**
@@ -37,9 +39,14 @@ import photodb.photo.FilePhoto;
  * @author Steffen Schumacher <steff@tdc.dk>
  */
 @WebService(serviceName = "PhotoDBWS")
-public class PhotoDBWS implements ServletContextListener {
-    final static Logger LOG = Logger.getLogger(PhotoDBWS.class.getName());
-    protected Database db;
+public class PhotoDBWS extends photodb.processing.PhotoController implements ServletContextListener {
+    private final static Logger LOG = Logger.getLogger(PhotoDBWS.class.getName());
+    private final static String s_photoroot = "/vol/photo-db/";
+    private static Database s_db;
+    
+    public PhotoDBWS() throws SQLException {
+        super(s_photoroot, s_db);
+    }
     
     /**
      * exists checks if a given photo fingerprint exists in the database already
@@ -67,12 +74,16 @@ public class PhotoDBWS implements ServletContextListener {
     public void add(@WebParam(name = "filephoto") FilePhoto filephoto, 
             @WebParam(name= "imageBytes") byte[] imageBytes) throws ExistingPhotoException {
         try {
-            db.insert(filephoto);
-            LOG.log(Level.FINE, "Inserted {0} into the database", filephoto.toString());
+            ByteChannel source = new ByteChannel(imageBytes);
+
+            insert(filephoto, source);
             
         } catch (ExistingPhotoException e) {
             LOG.log(Level.SEVERE, "Attempt to add {0} failed, since we already had it", filephoto);
             throw e;
+        } catch (IOException ex) {
+            LOG.log(Level.SEVERE, "Unexpected IO Exception during insert of " + 
+                    filephoto.toString(), ex);
         }
     }
     
@@ -82,7 +93,7 @@ public class PhotoDBWS implements ServletContextListener {
     @Override
     public void contextInitialized(ServletContextEvent sce) {
         try {
-            db = new Database("/vol/photo-db/photo.db");
+            s_db = new Database(s_photoroot + "photo.db");
         } catch (SQLException ex) {
             LOG.log(Level.SEVERE, "Unable to initialize connection to database", ex);
         }
