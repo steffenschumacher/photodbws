@@ -3,7 +3,6 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-
 package photodb.io;
 
 import java.io.IOException;
@@ -13,32 +12,40 @@ import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.WritableByteChannel;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  *
  * @author ssch
  */
 public class ByteChannel extends FileChannel {
-    
+
+    private final static Logger LOG = Logger.getLogger(ByteChannel.class.getName());
+
     final private byte[] data;
     private int pos;
 
     public ByteChannel(byte[] data) {
         this.data = data;
         pos = 0;
-    }   
-    
+    }
+
     public ByteChannel(byte[] data, int pos) {
         this.data = data;
         this.pos = pos;
-    }   
+    }
 
     @Override
     public int read(ByteBuffer dst) throws IOException {
-        int remainder = data.length-pos;
-        dst.put(data, pos, remainder);
-        pos = data.length;
-        return remainder;
+        int remainder = data.length - pos;
+        if(remainder == 0) {
+            return -1;
+        }
+        int length = (dst.limit() < remainder ? dst.limit() : remainder);
+        dst.put(data, pos, length);
+        pos += length;
+        return length;
     }
 
     @Override
@@ -53,12 +60,12 @@ public class ByteChannel extends FileChannel {
 
     @Override
     public FileChannel position(long newPosition) throws IOException {
-        return new ByteChannel(data, (int)newPosition);
+        return new ByteChannel(data, (int) newPosition);
     }
 
     @Override
     public long size() throws IOException {
-        return (long)data.length;
+        return (long) data.length;
     }
 
     @Override
@@ -120,5 +127,5 @@ public class ByteChannel extends FileChannel {
     public long write(ByteBuffer[] srcs, int offset, int length) throws IOException {
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
-    
+
 }

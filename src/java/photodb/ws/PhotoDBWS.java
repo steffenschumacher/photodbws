@@ -17,11 +17,12 @@
  *  permission is obtained from TDC A/S.
  *  
  */
-
 package photodb.ws;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.jws.WebMethod;
@@ -29,77 +30,128 @@ import javax.jws.WebParam;
 import javax.jws.WebService;
 import javax.servlet.ServletContextEvent;
 import javax.servlet.ServletContextListener;
-import photodb.db.Database;
+import javax.xml.bind.annotation.XmlElement;
+import photodb.config.Config;
+import photodb.config.NotInitializedException;
 import photodb.db.ExistingPhotoException;
 import photodb.io.ByteChannel;
-import photodb.photo.FilePhoto;
+import photodb.photo.SoapPhoto;
+import photodb.processing.PhotoController;
 
 /**
  *
  * @author Steffen Schumacher <steff@tdc.dk>
  */
 @WebService(serviceName = "PhotoDBWS")
-public class PhotoDBWS extends photodb.processing.PhotoController implements ServletContextListener {
+public class PhotoDBWS implements ServletContextListener {
+
     private final static Logger LOG = Logger.getLogger(PhotoDBWS.class.getName());
-    private final static String s_photoroot = "/vol/photo-db/";
-    private static Database s_db;
-    
-    public PhotoDBWS() throws SQLException {
-        super(s_photoroot, s_db);
-    }
-    
+    private static PhotoController cntr;
+
     /**
      * exists checks if a given photo fingerprint exists in the database already
-     * @param filephoto
+     *
+     * @param soapphoto
+     * @return
+     */
+    @WebMethod(operationName = "isUploadEligible")
+    public boolean isUploadEligible(
+            @WebParam(name = "soapphoto")
+            @XmlElement(required = true) SoapPhoto soapphoto) {
+        boolean isDesired = cntr.isDesired(soapphoto);
+        LOG.log(Level.FINE, "{0} was checked for upload eligibility. Result: {1}",
+                new Object[]{soapphoto.toString(), isDesired});
+        return isDesired;
+    }
+
+    /**
+     * Checks an array of SoapPhotos to see if they each are eligible for uploading.
+     * @param photos array of SoapPhoto
      * @return 
      */
-    @WebMethod(operationName = "exists")
-    @Override
-    public boolean exists(@WebParam(name = "filephoto") FilePhoto filephoto) {
-        return super.exists(filephoto);
+    @WebMethod(operationName = "isArrayUploadEligible")
+    public List<SoapPhoto> isArrayUploadEligible(
+            @WebParam(name = "photos")
+            @XmlElement(required = true)
+            List<SoapPhoto> photos) {
+        if(photos.size() > 20) {
+            return null;
+        }
+        for(SoapPhoto sp : photos) {
+            boolean isDesired = cntr.isDesired(sp);
+            LOG.log(Level.FINE, "{0} was checked for upload eligibility. Result: {1}",
+                new Object[]{sp.toString(), isDesired});
+            sp.setEligible(isDesired);
+        }
+        return photos;
     }
-    
+
     /**
      * exists checks if a given photo fingerprint exists in the database already
-     * @param filephoto 
-     * @param imageBytes 
-     * @throws photodb.db.ExistingPhotoException 
+     *
+     * @param soapphoto
+     * @param imageBytes
+     * @throws photodb.ws.ExistingPhotoWSException
      */
-    @WebMethod(operationName = "exists")
-    public void add(@WebParam(name = "filephoto") FilePhoto filephoto, 
-            @WebParam(name= "imageBytes") byte[] imageBytes) throws ExistingPhotoException {
+    @WebMethod(operationName = "add")
+    public void add(
+            @WebParam(name = "soapphoto")
+            @XmlElement(required = true) SoapPhoto soapphoto,
+            @WebParam(name = "imageBytes")
+            @XmlElement(required = true) byte[] imageBytes) throws ExistingPhotoWSException {
         try {
             ByteChannel source = new ByteChannel(imageBytes);
-
-            insert(filephoto, source);
-            
+            cntr.insert(soapphoto, source);
+            LOG.log(Level.INFO, "Inserted {0} successfully", soapphoto.toString());
         } catch (ExistingPhotoException e) {
-            LOG.log(Level.SEVERE, "Attempt to add {0} failed, since we already had it", filephoto);
-            throw e;
+            LOG.log(Level.SEVERE, "Attempt to add {0} failed, since we already had it", soapphoto);
+            throw new ExistingPhotoWSException(e.getMessage(), e.getBlockingPhoto().toSOAPObject());
         } catch (IOException ex) {
-            LOG.log(Level.SEVERE, "Unexpected IO Exception during insert of " + 
-                    filephoto.toString(), ex);
+            LOG.log(Level.SEVERE, "Unexpected IO Exception during insert of "
+                    + soapphoto.toString(), ex);
         }
     }
-    
-    
-    
 
     @Override
+    @WebMethod(exclude = true)
     public void contextInitialized(ServletContextEvent sce) {
+        final String root = "/vol/photo-db";
+        Config c;
+
         try {
-            s_db = new Database(s_photoroot + "photo.db");
+            Config.getInstance();
+            LOG.log(Level.SEVERE, "Got unexpected config before having initialized it?");
+        } catch (NotInitializedException ex) {
+            try {
+                ex.initializeConfig(Config.deriveConfigFileFromPath(root));
+            } catch (FileNotFoundException fnfe) {
+                //Means we need to create one manually
+                c = new Config(root);
+                ex.initializeConfig(c);
+                try {
+                    ex.storeConfig(c);
+                } catch (IOException ex1) {
+                    LOG.log(Level.SEVERE, "Exception storing config", ex1);
+                }
+            } catch (IOException ex1) {
+                LOG.log(Level.SEVERE, "Exception reading config", ex1);
+            }
+            //At this point Config should be initialized
+        }
+        try {
+            cntr = new PhotoController(root);
         } catch (SQLException ex) {
             LOG.log(Level.SEVERE, "Unable to initialize connection to database", ex);
         }
+
     }
 
     @Override
+    @WebMethod(exclude = true)
     public void contextDestroyed(ServletContextEvent sce) {
-        if(s_db != null) {
-            s_db.close();
+        if (cntr != null) {
+            cntr.close();
         }
     }
-    
-    
+
 }
