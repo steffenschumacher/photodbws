@@ -115,7 +115,7 @@ public class PhotoDBWS implements ServletContextListener {
     @Override
     @WebMethod(exclude = true)
     public void contextInitialized(ServletContextEvent sce) {
-        final String root = "/vol/photo-db";
+        final String root = "/Volumes/store0/photo-db";
         Config c;
 
         try {
